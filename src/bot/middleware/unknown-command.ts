@@ -21,6 +21,13 @@ export async function unknownCommandMiddleware(ctx: Context, next: NextFunction)
     return;
   }
 
+  // The colon form /skill:name is not a registered command; let it through
+  // to the message router's hears handler instead of replying "unknown".
+  if (/^\/skill:/.test(text.trim())) {
+    await next();
+    return;
+  }
+
   const commandToken = text.trim().split(/\s+/)[0];
   logger.debug(`[Bot] Unknown slash command received: ${commandToken}`);
   await ctx.reply(t("bot.unknown_command", { command: commandToken }));

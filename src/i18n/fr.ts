@@ -21,6 +21,7 @@ export const fr: I18nDictionary = {
   "cmd.description.tasklist": "Afficher les tâches planifiées",
   "cmd.description.commands": "Commandes personnalisées",
   "cmd.description.skills": "Catalogue de skills",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "MCP servers",
   "cmd.description.opencode_start": "Démarrer le serveur OpenCode",
   "cmd.description.opencode_stop": "Arrêter le serveur OpenCode",

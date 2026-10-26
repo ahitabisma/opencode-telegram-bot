@@ -21,6 +21,7 @@ export const tr: I18nDictionary = {
   "cmd.description.tasklist": "Zamanlanmış görevleri listele",
   "cmd.description.commands": "Özel komutlar",
   "cmd.description.skills": "Yetenek kataloğu",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "MCP sunucuları",
   "cmd.description.opencode_start": "OpenCode sunucusunu başlat",
   "cmd.description.opencode_stop": "OpenCode sunucusunu durdur",

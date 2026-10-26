@@ -20,6 +20,7 @@ import { taskListCommand } from "../commands/tasklist-command.js";
 import { renameCommand } from "../commands/rename-command.js";
 import { commandsCommand } from "../commands/command-catalog-command.js";
 import { skillsCommand } from "../commands/skills-catalog-command.js";
+import { skillCommand } from "../commands/skill-run-command.js";
 import { mcpsCommand } from "../commands/mcp-catalog-command.js";
 import { startCommand } from "../commands/start-command.js";
 import { helpCommand } from "../commands/help-command.js";
@@ -109,6 +110,7 @@ export function registerCommandRouter(bot: Bot<Context>, deps: CommandRouterDeps
   bot.command("rename", (ctx) => renameCommand(ctx, container));
   bot.command("commands", (ctx) => commandsCommand(ctx, container));
   bot.command("skills", (ctx) => skillsCommand(ctx, container));
+  bot.command("skill", (ctx) => skillCommand(ctx, botDeps));
   bot.command("mcps", (ctx) => mcpsCommand(ctx, container));
   for (const definition of registry.definitions()) {
     bot.command(definition.command, async (ctx) => {

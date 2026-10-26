@@ -21,6 +21,7 @@ export const ru: I18nDictionary = {
   "cmd.description.tasklist": "Список задач по расписанию",
   "cmd.description.commands": "Пользовательские команды",
   "cmd.description.skills": "Каталог скиллов",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "MCP серверы",
   "cmd.description.opencode_start": "Запустить OpenCode сервер",
   "cmd.description.opencode_stop": "Остановить OpenCode сервер",

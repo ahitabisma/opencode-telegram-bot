@@ -28,6 +28,7 @@ export const id: I18nDictionary = {
   "cmd.description.tasklist": "Daftar tugas terjadwal",
   "cmd.description.commands": "Perintah khusus",
   "cmd.description.skills": "Katalog skill",
+  "cmd.description.skill": "Jalankan skill langsung",
   "cmd.description.mcps": "Server MCP",
   "cmd.description.opencode_start": "Mulai server OpenCode",
   "cmd.description.opencode_stop": "Hentikan server OpenCode",

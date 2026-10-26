@@ -28,6 +28,7 @@ export const ko: I18nDictionary = {
   "cmd.description.tasklist": "예약 작업 목록 보기",
   "cmd.description.commands": "사용자 지정 명령어",
   "cmd.description.skills": "스킬 카탈로그",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "MCP 서버",
   "cmd.description.opencode_start": "OpenCode 서버 시작",
   "cmd.description.opencode_stop": "OpenCode 서버 중지",

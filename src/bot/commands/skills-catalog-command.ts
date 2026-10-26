@@ -20,7 +20,13 @@ export async function skillsCommand(
       return;
     }
 
-    const skills = await loadSkillsCatalog(currentProject.worktree);
+    const allSkills = await loadSkillsCatalog(currentProject.worktree);
+    const search = typeof ctx.match === "string" ? ctx.match.trim().toLowerCase() : "";
+    const skills = search
+      ? allSkills.filter(
+          (s) => s.name.toLowerCase().includes(search) || (s.description && s.description.toLowerCase().includes(search)),
+        )
+      : allSkills;
     if (skills.length === 0) {
       await ctx.reply(t("skills.empty"));
       return;

@@ -21,6 +21,7 @@ export const zh: I18nDictionary = {
   "cmd.description.tasklist": "查看定时任务",
   "cmd.description.commands": "自定义命令",
   "cmd.description.skills": "技能目录",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "MCP servers",
   "cmd.description.opencode_start": "启动 OpenCode 服务器",
   "cmd.description.opencode_stop": "停止 OpenCode 服务器",

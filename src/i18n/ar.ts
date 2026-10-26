@@ -28,6 +28,7 @@ export const ar: I18nDictionary = {
   "cmd.description.tasklist": "عرض المهام المجدولة",
   "cmd.description.commands": "الأوامر المخصصة",
   "cmd.description.skills": "قائمة المهارات",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "خوادم MCP",
   "cmd.description.opencode_start": "تشغيل خادم OpenCode",
   "cmd.description.opencode_stop": "إيقاف خادم OpenCode",

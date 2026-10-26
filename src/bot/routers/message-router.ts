@@ -31,6 +31,7 @@ import { tryEnqueuePromptIfBusy } from "../handlers/prompt-queue-dispatch.js";
 import { handleCatalogTextArguments } from "../handlers/text-message-handler.js";
 import { handleVoiceMessage } from "../handlers/voice-handler.js";
 import { unknownCommandMiddleware } from "../middleware/unknown-command.js";
+import { skillCommand } from "../commands/skill-run-command.js";
 import { getIncomingPrompt } from "../handlers/rich-message-handler.js";
 import { handleUnsupportedMessage } from "../handlers/unsupported-message-handler.js";
 
@@ -57,6 +58,10 @@ async function blockMenuWhileInteractionActive(
 export function registerMessageRouter(bot: Bot<Context>, deps: MessageRouterDeps): void {
   const { container } = deps;
   bot.on("message:text", unknownCommandMiddleware);
+
+  bot.hears(/^\/skill:/, async (ctx) => {
+    await skillCommand(ctx, { ...container, bot });
+  });
 
   bot.hears(QUEUED_PROMPT_BUTTON_TEXT_PATTERN, async (ctx) => {
     logger.debug(`[Bot] Queued prompt button pressed: ${ctx.message?.text}`);

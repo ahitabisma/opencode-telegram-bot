@@ -19,6 +19,7 @@ export const en = {
   "cmd.description.tasklist": "List scheduled tasks",
   "cmd.description.commands": "Custom commands",
   "cmd.description.skills": "Skills catalog",
+  "cmd.description.skill": "Run a skill directly",
   "cmd.description.mcps": "MCP servers",
   "cmd.description.opencode_start": "Start OpenCode server",
   "cmd.description.opencode_stop": "Stop OpenCode server",
