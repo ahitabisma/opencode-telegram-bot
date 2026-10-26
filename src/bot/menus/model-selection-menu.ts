@@ -1,6 +1,7 @@
 import { Context, InlineKeyboard } from "grammy";
 import {
   fetchCurrentModel,
+  getConfigDefaultModel,
   getModelSelectionLists,
 } from "../../app/services/model-selection-service.js";
 import type {
@@ -22,6 +23,39 @@ export const MODEL_ROOT_CALLBACK = "model:root";
 export const MODEL_PROVIDERS_CALLBACK_PREFIX = "model:providers:";
 export const MODEL_PROVIDER_CALLBACK_PREFIX = "model:provider:";
 export const MODEL_PROVIDER_MODEL_CALLBACK_PREFIX = "model:pick:";
+
+export const MODEL_FAVORITE_CALLBACK_PREFIX = "model:fav:";
+
+export type ModelFavoriteKind = "favorites" | "recent" | "page" | "result";
+
+export function buildModelFavoriteCallback(kind: ModelFavoriteKind, index: number): string {
+  return `${MODEL_FAVORITE_CALLBACK_PREFIX}${kind}:${index}`;
+}
+
+export function parseModelFavoriteCallback(
+  data: string,
+): { kind: ModelFavoriteKind; index: number } | null {
+  if (!data.startsWith(MODEL_FAVORITE_CALLBACK_PREFIX)) {
+    return null;
+  }
+
+  const parts = data.slice(MODEL_FAVORITE_CALLBACK_PREFIX.length).split(":");
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const [kind, indexText] = parts;
+  if (kind !== "favorites" && kind !== "recent" && kind !== "page" && kind !== "result") {
+    return null;
+  }
+
+  const index = parseIndex(indexText ?? "");
+  if (index === null) {
+    return null;
+  }
+
+  return { kind, index };
+}
 
 interface ModelsPaginationRange {
   page: number;
@@ -145,11 +179,18 @@ export async function buildModelSelectionMenu(
     return keyboard;
   }
 
+  // The configured default model is injected into favorites by the service
+  // but lives in config, not in the favorites file — it cannot be unfavorited
+  // from here, so it gets no toggle button.
+  const configModel = getConfigDefaultModel();
+  const configModelKey = configModel ? `${configModel.providerID}/${configModel.modelID}` : null;
+
   const addButton = (
     model: FavoriteModel,
     prefix: string,
     kind: ModelListKind,
     index: number,
+    isFavorite: boolean,
   ): void => {
     const isActive =
       currentModel &&
@@ -159,11 +200,15 @@ export async function buildModelSelectionMenu(
     const label = `${prefix} ${model.providerID}/${model.modelID}`;
     const labelWithCheck = isActive ? `✅ ${label}` : label;
 
-    keyboard.text(labelWithCheck, buildModelListCallback(kind, index)).row();
+    keyboard.text(labelWithCheck, buildModelListCallback(kind, index));
+    if (configModelKey !== `${model.providerID}/${model.modelID}`) {
+      keyboard.text(isFavorite ? "⭐" : "☆", buildModelFavoriteCallback(kind, index));
+    }
+    keyboard.row();
   };
 
-  favorites.forEach((model, index) => addButton(model, "⭐", "favorites", index));
-  recent.forEach((model, index) => addButton(model, "🕘", "recent", index));
+  favorites.forEach((model, index) => addButton(model, "⭐", "favorites", index, true));
+  recent.forEach((model, index) => addButton(model, "🕘", "recent", index, false));
 
   return keyboard;
 }
@@ -247,8 +292,7 @@ export function buildProvidersMenuView(
 
   keyboard.text(t("model.button.back"), MODEL_ROOT_CALLBACK);
 
-  const baseText =
-    providers.length === 0 ? t("model.providers.empty") : t("model.providers.title");
+  const baseText = providers.length === 0 ? t("model.providers.empty") : t("model.providers.title");
 
   return {
     text: appendPageIndicator(
@@ -272,6 +316,8 @@ export function buildProviderModelsMenuView(
   page: number,
   providersPage: number,
   currentModel?: ModelInfo,
+  favoriteKeys: ReadonlySet<string> = new Set<string>(),
+  configModelKey: string | null = null,
 ): { text: string; keyboard: InlineKeyboard; page: number; pageModels: FavoriteModel[] } {
   const keyboard = new InlineKeyboard();
   const {
@@ -289,7 +335,12 @@ export function buildProviderModelsMenuView(
       model.modelID === currentModel.modelID;
     const label = isActive ? `✅ ${model.modelID}` : model.modelID;
 
-    keyboard.text(label, `${MODEL_PROVIDER_MODEL_CALLBACK_PREFIX}${index}`).row();
+    keyboard.text(label, `${MODEL_PROVIDER_MODEL_CALLBACK_PREFIX}${index}`);
+    const key = `${model.providerID}/${model.modelID}`;
+    if (key !== configModelKey) {
+      keyboard.text(favoriteKeys.has(key) ? "⭐" : "☆", buildModelFavoriteCallback("page", index));
+    }
+    keyboard.row();
   });
 
   appendPaginationRow(
@@ -328,12 +379,16 @@ export async function showModelSelectionMenu(ctx: Context, deps: InlineMenuDeps)
     const modelLists = await getModelSelectionLists();
     const { text, keyboard } = await buildModelRootMenuView(currentModel, modelLists);
 
-    await replyWithInlineMenu(ctx, {
-      menuKind: "model",
-      text,
-      keyboard,
-      metadata: { modelLists },
-    }, deps);
+    await replyWithInlineMenu(
+      ctx,
+      {
+        menuKind: "model",
+        text,
+        keyboard,
+        metadata: { modelLists },
+      },
+      deps,
+    );
   } catch (err) {
     logger.error("[ModelHandler] Error showing model menu:", err);
     await ctx.reply(t("model.menu.error"));

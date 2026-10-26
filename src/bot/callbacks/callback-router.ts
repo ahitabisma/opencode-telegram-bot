@@ -12,6 +12,7 @@ import { handleMcpsCallback } from "./mcp-catalog-callback-handler.js";
 import { handleMessagesCallback } from "./message-history-callback-handler.js";
 import {
   handleModelProvidersCallback,
+  handleModelFavoriteCallback,
   handleModelSearchCallback,
   handleModelSearchResults,
   handleModelSelect,
@@ -23,15 +24,9 @@ import { handleQuestionCallback } from "./question-callback-handler.js";
 import { handleRecentSelect } from "./recent-callback-handler.js";
 import { handleRenameCancel } from "./rename-callback-handler.js";
 import { handleSettingsCallback } from "./settings-callback-handler.js";
-import {
-  handleBackgroundSessionOpen,
-  handleSessionSelect,
-} from "./session-callback-handler.js";
+import { handleBackgroundSessionOpen, handleSessionSelect } from "./session-callback-handler.js";
 import { handleSkillsCallback } from "./skills-catalog-callback-handler.js";
-import {
-  handleTaskCallback,
-  handleTaskListCallback,
-} from "./scheduled-task-callback-handler.js";
+import { handleTaskCallback, handleTaskListCallback } from "./scheduled-task-callback-handler.js";
 import { handleVariantSelect } from "./variant-selection-callback-handler.js";
 import { handleWorktreeCallback } from "./worktree-callback-handler.js";
 import { clearLsPathIndex, clearOpenPathIndex } from "../menus/file-browser-menu.js";
@@ -87,7 +82,14 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
     ],
     [
       "compact",
-      { name: "compact", handlers: [(ctx) => handleCompactDetails(ctx, container), (ctx) => handleCompactConfirm(ctx, container)], errorScope: "interaction" },
+      {
+        name: "compact",
+        handlers: [
+          (ctx) => handleCompactDetails(ctx, container),
+          (ctx) => handleCompactConfirm(ctx, container),
+        ],
+        errorScope: "interaction",
+      },
     ],
     [
       "ls",
@@ -118,6 +120,7 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
       {
         name: "model",
         handlers: [
+          (ctx) => handleModelFavoriteCallback(ctx, container),
           (ctx) => handleModelSearchCallback(ctx, container),
           (ctx) => handleModelSearchResults(ctx, container),
           (ctx) => handleModelProvidersCallback(ctx, container),
@@ -168,7 +171,11 @@ export function registerCallbackRouter(bot: Bot<Context>, deps: CallbackRouterDe
     ],
     [
       "recent",
-      { name: "recent", handlers: [(ctx) => handleRecentSelect(ctx, botDeps)], errorScope: "interaction" },
+      {
+        name: "recent",
+        handlers: [(ctx) => handleRecentSelect(ctx, botDeps)],
+        errorScope: "interaction",
+      },
     ],
     [
       "rename",

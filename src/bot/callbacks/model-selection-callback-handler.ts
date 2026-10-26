@@ -3,19 +3,22 @@ import type { AppContainer } from "../../app/bootstrap/app-container.js";
 import { getStoredAgent, resolveProjectAgent } from "../../app/services/agent-selection-service.js";
 import {
   fetchCurrentModel,
+  getConfigDefaultModel,
+  getFileFavoriteModels,
   getModelAvailability,
   getModelSelectionLists,
   getProviderModels,
   getProviders,
   searchModels,
   selectModel,
+  toggleFavoriteModel,
 } from "../../app/services/model-selection-service.js";
 import { formatVariantForButton } from "../../app/services/variant-selection-service.js";
 import { formatModelForDisplay } from "../../app/types/model.js";
 import type { FavoriteModel, ModelInfo, ProviderInfo } from "../../app/types/model.js";
 import { logger } from "../../utils/logger.js";
 import { t } from "../../i18n/index.js";
-import { cancelMenu, failure, switched } from "./feedback.js";
+import { cancelMenu, failure, notify, switched } from "./feedback.js";
 import { createMainKeyboard } from "../keyboards/main-reply-keyboard.js";
 import {
   appendInlineMenuCancelButton,
@@ -24,9 +27,11 @@ import {
 } from "../menus/inline-menu.js";
 import { showVariantSelectionMenuAfterModelChange } from "../menus/variant-selection-menu.js";
 import {
+  buildModelFavoriteCallback,
   buildModelRootMenuView,
   buildProviderModelsMenuView,
   buildProvidersMenuView,
+  MODEL_FAVORITE_CALLBACK_PREFIX,
   MODEL_LIST_CALLBACK_PREFIX,
   MODEL_PROVIDER_CALLBACK_PREFIX,
   MODEL_PROVIDER_MODEL_CALLBACK_PREFIX,
@@ -35,6 +40,7 @@ import {
   MODEL_SEARCH_AGAIN_CALLBACK,
   MODEL_SEARCH_CALLBACK,
   MODEL_SEARCH_CANCEL_CALLBACK,
+  parseModelFavoriteCallback,
   parseProviderCallback,
   parseProviderModelCallback,
   parseProvidersPageCallback,
@@ -283,6 +289,18 @@ function updateModelMenuMetadata(
   });
 }
 
+async function getFavoriteMenuState(): Promise<{
+  favoriteKeys: Set<string>;
+  configModelKey: string | null;
+}> {
+  const favoriteModels = await getFileFavoriteModels();
+  const configModel = getConfigDefaultModel();
+  return {
+    favoriteKeys: new Set(favoriteModels.map((model) => `${model.providerID}/${model.modelID}`)),
+    configModelKey: configModel ? `${configModel.providerID}/${configModel.modelID}` : null,
+  };
+}
+
 async function renderModelMenuScreen(
   ctx: Context,
   view: { text: string; keyboard: InlineKeyboard },
@@ -322,6 +340,7 @@ async function showProviderModelsScreen(
   page: number,
 ): Promise<void> {
   const models = await getProviderModels(provider.id);
+  const { favoriteKeys, configModelKey } = await getFavoriteMenuState();
   const view = buildProviderModelsMenuView(
     provider,
     providerIndex,
@@ -329,6 +348,8 @@ async function showProviderModelsScreen(
     page,
     meta.providersPage,
     fetchCurrentModel(),
+    favoriteKeys,
+    configModelKey,
   );
 
   await renderModelMenuScreen(ctx, view);
@@ -348,12 +369,21 @@ async function showProviderModelsScreen(
 function buildModelSearchResultsView(
   query: string,
   results: FavoriteModel[],
+  favoriteKeys: ReadonlySet<string> = new Set<string>(),
+  configModelKey: string | null = null,
 ): { text: string; keyboard: InlineKeyboard } {
   const keyboard = new InlineKeyboard();
 
   for (const [index, model] of results.entries()) {
     const label = `${model.providerID}/${model.modelID}`;
-    keyboard.text(label, `${MODEL_SEARCH_RESULT_CALLBACK_PREFIX}${index}`).row();
+    keyboard.text(label, `${MODEL_SEARCH_RESULT_CALLBACK_PREFIX}${index}`);
+    if (label !== configModelKey) {
+      keyboard.text(
+        favoriteKeys.has(label) ? "⭐" : "☆",
+        buildModelFavoriteCallback("result", index),
+      );
+    }
+    keyboard.row();
   }
 
   keyboard.row();
@@ -396,7 +426,8 @@ async function showModelSearchResultsAgain(
   meta: ModelSearchMetadata,
 ): Promise<void> {
   const results = await searchModels(meta.query);
-  const view = buildModelSearchResultsView(meta.query, results);
+  const { favoriteKeys, configModelKey } = await getFavoriteMenuState();
+  const view = buildModelSearchResultsView(meta.query, results, favoriteKeys, configModelKey);
 
   await ctx.answerCallbackQuery().catch(() => {});
   await ctx.editMessageText(view.text, { reply_markup: view.keyboard });
@@ -464,6 +495,140 @@ async function applyModelSelectionAndNotify(
 
   await switched(ctx, t("model.changed_message", { name: displayName }), keyboard);
   await showVariantSelectionMenuAfterModelChange(ctx, modelInfo, deps);
+}
+
+/**
+ * Toggle a model's favorite state and confirm it with a toast. Returns whether
+ * the toggle ran: false for the configured default model, which is injected
+ * into favorites by config and cannot be unfavorited here. Callers skip the
+ * menu re-render when nothing changed (re-rendering identical content would
+ * fail as "not modified"). The handler itself always returns true to the
+ * router once the callback is consumed.
+ */
+async function applyFavoriteToggle(ctx: Context, modelInfo: ModelInfo): Promise<boolean> {
+  const configModel = getConfigDefaultModel();
+  const isConfigDefault =
+    configModel !== null &&
+    configModel.providerID === modelInfo.providerID &&
+    configModel.modelID === modelInfo.modelID;
+  let key: "model.favorite.added" | "model.favorite.removed" | "model.favorite.config_default" =
+    "model.favorite.config_default";
+  let params: { name: string } | undefined;
+  let toggled = false;
+  if (!isConfigDefault) {
+    const { favorited } = await toggleFavoriteModel(modelInfo.providerID, modelInfo.modelID);
+    key = favorited ? "model.favorite.added" : "model.favorite.removed";
+    params = { name: `${modelInfo.providerID}/${modelInfo.modelID}` };
+    toggled = true;
+  }
+  await notify(ctx, key, params);
+  return toggled;
+}
+
+/**
+ * Handle favorite toggle callbacks from the model inline menu:
+ * - model:fav:favorites:<index> — unfavorite from the root favorites list
+ * - model:fav:recent:<index> — favorite from the root recent list
+ * - model:fav:page:<index> — toggle a model on the current provider page
+ * - model:fav:result:<index> — toggle a model in the search results
+ *
+ * Registered before the other model handlers: without this, the legacy
+ * fallback in handleModelSelect would read these as model selections.
+ * The menu stays open; the screen is re-rendered so the stars update at once.
+ */
+export async function handleModelFavoriteCallback(
+  ctx: Context,
+  deps: ModelSelectionDeps,
+): Promise<boolean> {
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith(MODEL_FAVORITE_CALLBACK_PREFIX)) {
+    return false;
+  }
+
+  const parsed = parseModelFavoriteCallback(data);
+  if (!parsed) {
+    logger.warn(`[ModelHandler] Invalid favorite callback data: ${data}`);
+    await ctx.answerCallbackQuery({ text: t("model.change_error_callback") }).catch(() => {});
+    return true;
+  }
+
+  const { kind, index } = parsed;
+
+  try {
+    if (kind === "result") {
+      const meta = parseModelSearchMetadata(deps);
+      if (!meta || meta.stage !== "results") {
+        await ctx
+          .answerCallbackQuery({ text: t("inline.inactive_callback"), show_alert: true })
+          .catch(() => {});
+        return true;
+      }
+
+      const callbackMessageId = ctx.callbackQuery?.message?.message_id;
+      if (meta.messageId !== undefined && callbackMessageId !== meta.messageId) {
+        await ctx
+          .answerCallbackQuery({ text: t("inline.inactive_callback"), show_alert: true })
+          .catch(() => {});
+        return true;
+      }
+
+      const modelInfo = meta.models[index];
+      if (!modelInfo) {
+        await showModelSearchResultsAgain(ctx, deps, meta);
+        return true;
+      }
+
+      if (await applyFavoriteToggle(ctx, modelInfo)) {
+        await showModelSearchResultsAgain(ctx, deps, meta);
+      }
+      return true;
+    }
+
+    const isActiveMenu = await ensureActiveInlineMenu(ctx, "model", deps);
+    if (!isActiveMenu) {
+      return true;
+    }
+
+    if (kind === "page") {
+      const meta = parseProviderBrowserMetadata(deps);
+      const modelInfo = meta?.models[index];
+      const providerIndex = meta?.providerIndex ?? null;
+      const provider = providerIndex !== null ? meta?.providers[providerIndex] : undefined;
+      if (!modelInfo || !meta || !provider || providerIndex === null) {
+        logger.warn(`[ModelHandler] Unresolved favorite callback: ${data}`);
+        await ctx.answerCallbackQuery({ text: t("model.change_error_callback") }).catch(() => {});
+        return true;
+      }
+
+      if (await applyFavoriteToggle(ctx, modelInfo)) {
+        await showProviderModelsScreen(
+          ctx,
+          deps,
+          meta,
+          provider,
+          providerIndex,
+          meta.providerModelsPage,
+        );
+      }
+      return true;
+    }
+
+    const lists = parseModelListMetadata(deps);
+    const modelInfo = kind === "favorites" ? lists?.favorites[index] : lists?.recent[index];
+    if (!modelInfo) {
+      await showModelRootScreen(ctx, deps);
+      return true;
+    }
+
+    if (await applyFavoriteToggle(ctx, modelInfo)) {
+      await showModelRootScreen(ctx, deps);
+    }
+    return true;
+  } catch (err) {
+    logger.error("[ModelHandler] Error handling favorite toggle:", err);
+    await failure(ctx, "model.favorite.error");
+    return true;
+  }
 }
 
 /**
@@ -699,7 +864,8 @@ export async function handleModelSearchTextInput(
 
   try {
     const results = await searchModels(text);
-    const view = buildModelSearchResultsView(text, results);
+    const { favoriteKeys, configModelKey } = await getFavoriteMenuState();
+    const view = buildModelSearchResultsView(text, results, favoriteKeys, configModelKey);
 
     const sent = await ctx.reply(view.text, { reply_markup: view.keyboard });
 

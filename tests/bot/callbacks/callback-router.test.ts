@@ -13,6 +13,7 @@ const mocked = vi.hoisted(() => ({
   handleInlineMenuCancel: vi.fn(),
   handleMcpsCallback: vi.fn(),
   handleMessagesCallback: vi.fn(),
+  handleModelFavoriteCallback: vi.fn(),
   handleModelProvidersCallback: vi.fn(),
   handleModelSearchCallback: vi.fn(),
   handleModelSearchResults: vi.fn(),
@@ -65,6 +66,7 @@ vi.mock("../../../src/bot/callbacks/message-history-callback-handler.js", () => 
   handleMessagesCallback: mocked.handleMessagesCallback,
 }));
 vi.mock("../../../src/bot/callbacks/model-selection-callback-handler.js", () => ({
+  handleModelFavoriteCallback: mocked.handleModelFavoriteCallback,
   handleModelProvidersCallback: mocked.handleModelProvidersCallback,
   handleModelSearchCallback: mocked.handleModelSearchCallback,
   handleModelSearchResults: mocked.handleModelSearchResults,
@@ -184,6 +186,7 @@ describe("bot/callbacks/callback-router", () => {
 
     await callback(createCallbackContext("model:anthropic:claude"));
 
+    expect(mocked.handleModelFavoriteCallback).toHaveBeenCalledTimes(1);
     expect(mocked.handleModelSearchCallback).toHaveBeenCalledTimes(1);
     expect(mocked.handleModelSearchResults).toHaveBeenCalledTimes(1);
     expect(mocked.handleModelProvidersCallback).toHaveBeenCalledTimes(1);
@@ -196,6 +199,7 @@ describe("bot/callbacks/callback-router", () => {
 
     await callback(createCallbackContext("model:result:0"));
 
+    expect(mocked.handleModelFavoriteCallback).toHaveBeenCalledTimes(1);
     expect(mocked.handleModelSearchCallback).toHaveBeenCalledTimes(1);
     expect(mocked.handleModelSearchResults).toHaveBeenCalledTimes(1);
     expect(mocked.handleModelProvidersCallback).not.toHaveBeenCalled();

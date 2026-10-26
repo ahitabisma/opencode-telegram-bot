@@ -465,6 +465,110 @@ async function readOpenCodeModelState(): Promise<{
 }
 
 /**
+ * Configured default model (from OPENCODE_MODEL_PROVIDER / OPENCODE_MODEL_ID).
+ * The model menu treats it as a favorite while OpenCode offers it, but it is
+ * not stored in the favorites file — so the bot never offers to unfavorite it.
+ */
+export function getConfigDefaultModel(): FavoriteModel | null {
+  return getEnvDefaultModel();
+}
+
+/**
+ * Favorite models stored in OpenCode's local state file, without the
+ * config-model injection getModelSelectionLists() applies. Used for the
+ * favorite toggle buttons, where only file membership can change.
+ */
+export async function getFileFavoriteModels(): Promise<FavoriteModel[]> {
+  try {
+    const { favorites } = await readOpenCodeModelState();
+    return favorites;
+  } catch (err) {
+    logger.warn("[ModelManager] Failed to read OpenCode model state for favorites:", err);
+    return [];
+  }
+}
+
+function isFavoriteEntry(value: unknown): value is { providerID: string; modelID: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "providerID" in value &&
+    typeof (value as { providerID: unknown }).providerID === "string" &&
+    (value as { providerID: string }).providerID.length > 0 &&
+    "modelID" in value &&
+    typeof (value as { modelID: unknown }).modelID === "string" &&
+    (value as { modelID: string }).modelID.length > 0
+  );
+}
+
+// Serializes favorite toggles: the state file is read, modified and replaced,
+// so two concurrent toggles must not interleave their read-modify-write.
+let favoriteToggleQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Add a model to (or remove it from) the `favorite` array in OpenCode's local
+ * state file — the same state OpenCode itself reads. Every other top-level
+ * key (recent, variant, ...) is preserved verbatim, and the file is replaced
+ * atomically (temp file + rename) so a crash never leaves a half-written file.
+ * Returns whether the model is a favorite after the toggle.
+ */
+export async function toggleFavoriteModel(
+  providerID: string,
+  modelID: string,
+): Promise<{ favorited: boolean }> {
+  const run = async (): Promise<{ favorited: boolean }> => {
+    if (providerID.trim().length === 0 || modelID.trim().length === 0) {
+      throw new Error("[ModelManager] Cannot toggle a favorite with an empty provider or model");
+    }
+
+    const fs = await import("fs/promises");
+    const stateFilePath = getOpenCodeModelStatePath();
+
+    let raw: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(await fs.readFile(stateFilePath, "utf-8"));
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error(`[ModelManager] Unexpected model state shape in ${stateFilePath}`);
+      }
+      raw = parsed as Record<string, unknown>;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+        throw err;
+      }
+      // No state file yet: start from an empty one instead of failing.
+    }
+
+    const key = getModelKey(providerID, modelID);
+    const current = Array.isArray(raw.favorite) ? raw.favorite : [];
+    const alreadyFavorite = current.some(
+      (entry) => isFavoriteEntry(entry) && getModelKey(entry.providerID, entry.modelID) === key,
+    );
+
+    raw.favorite = alreadyFavorite
+      ? current.filter(
+          (entry) =>
+            !(isFavoriteEntry(entry) && getModelKey(entry.providerID, entry.modelID) === key),
+        )
+      : [...current, { providerID, modelID }];
+
+    const tmpPath = `${stateFilePath}.tmp-${process.pid}`;
+    await fs.mkdir(path.dirname(stateFilePath), { recursive: true });
+    await fs.writeFile(tmpPath, JSON.stringify(raw), "utf-8");
+    await fs.rename(tmpPath, stateFilePath);
+
+    logger.info(`[ModelManager] ${alreadyFavorite ? "Removed" : "Added"} favorite model ${key}`);
+    return { favorited: !alreadyFavorite };
+  };
+
+  const result = favoriteToggleQueue.then(run, run);
+  favoriteToggleQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
  * Get favorite and recent models from OpenCode local state file.
  * Config model is treated as favorite while OpenCode offers it.
  */
@@ -784,9 +888,7 @@ export async function searchModels(query: string): Promise<FavoriteModel[]> {
     })
     .slice(0, SEARCH_RESULTS_LIMIT);
 
-  logger.debug(
-    `[ModelManager] Model search: query="${query}", results=${results.length}`,
-  );
+  logger.debug(`[ModelManager] Model search: query="${query}", results=${results.length}`);
 
   return results;
 }

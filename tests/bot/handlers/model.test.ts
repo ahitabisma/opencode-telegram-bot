@@ -36,6 +36,9 @@ vi.mock("../../../src/app/services/model-selection-service.js", () => ({
   searchModels: mocked.searchModelsMock,
   selectModel: mocked.selectModelMock,
   fetchCurrentModel: mocked.fetchCurrentModelMock,
+  getConfigDefaultModel: vi.fn(() => null),
+  getFileFavoriteModels: vi.fn(() => []),
+  toggleFavoriteModel: vi.fn(),
 }));
 
 vi.mock("../../../src/app/services/agent-selection-service.js", () => ({
@@ -263,11 +266,15 @@ describe("bot model selection", () => {
         variant: "default",
       });
       expect(mocked.getModelSelectionListsMock).not.toHaveBeenCalled();
-      expect(mocked.showVariantMenuAfterModelChangeMock).toHaveBeenCalledWith(ctx, {
-        providerID: "fireworks",
-        modelID: longModelID,
-        variant: "default",
-      }, expect.anything());
+      expect(mocked.showVariantMenuAfterModelChangeMock).toHaveBeenCalledWith(
+        ctx,
+        {
+          providerID: "fireworks",
+          modelID: longModelID,
+          variant: "default",
+        },
+        expect.anything(),
+      );
 
       const replyOrder = defined(
         (ctx.reply as unknown as { mock: { invocationCallOrder: number[] } }).mock
@@ -644,11 +651,15 @@ describe("bot model selection", () => {
         modelID: longModelID,
         variant: "default",
       });
-      expect(mocked.showVariantMenuAfterModelChangeMock).toHaveBeenCalledWith(ctx, {
-        providerID: "fireworks",
-        modelID: longModelID,
-        variant: "default",
-      }, expect.anything());
+      expect(mocked.showVariantMenuAfterModelChangeMock).toHaveBeenCalledWith(
+        ctx,
+        {
+          providerID: "fireworks",
+          modelID: longModelID,
+          variant: "default",
+        },
+        expect.anything(),
+      );
       expectDashboardRedrawnBeforeVariantMenu();
     });
 
@@ -937,11 +948,15 @@ describe("bot model selection", () => {
         modelID: "gpt-5",
         variant: "default",
       });
-      expect(mocked.showVariantMenuAfterModelChangeMock).toHaveBeenCalledWith(ctx, {
-        providerID: "openai",
-        modelID: "gpt-5",
-        variant: "default",
-      }, expect.anything());
+      expect(mocked.showVariantMenuAfterModelChangeMock).toHaveBeenCalledWith(
+        ctx,
+        {
+          providerID: "openai",
+          modelID: "gpt-5",
+          variant: "default",
+        },
+        expect.anything(),
+      );
       expectDashboardRedrawnBeforeVariantMenu();
     });
 
