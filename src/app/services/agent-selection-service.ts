@@ -1,4 +1,5 @@
 import { opencodeClient } from "../../opencode/client.js";
+import { config } from "../../config.js";
 import { getCurrentAgent, getCurrentProject, setCurrentAgent } from "../stores/settings-store.js";
 import { getCurrentSession } from "./session-service.js";
 import { getStoredModel, resolveModelToAdopt, selectModel } from "./model-selection-service.js";
@@ -10,27 +11,75 @@ import type { AgentInfo } from "../types/agent.js";
  * Get list of available agents from OpenCode API
  * @returns Array of available agents (filtered by mode and hidden flag)
  */
+// Muse patch (2026-10-26, ported from the VPS dist patch): the bundled SDK's
+// agent query hits /agent, which this OpenCode V2 server does not serve (SPA
+// fallback), so it always comes back empty and the agent menu shows no
+// options. Ask the server's agent endpoint directly with the project
+// directory header — the form it answers with data. Same approach as the
+// 2026-10-24 skills catalog patch.
 export async function getAvailableAgents(): Promise<AgentInfo[]> {
   try {
     const project = getCurrentProject();
-    const { data: agents, error } = await opencodeClient.app.agents(
-      project ? { directory: project.worktree } : undefined,
-    );
-
-    if (error) {
-      logger.error("[AgentManager] Failed to fetch agents:", error);
+    const directory = project ? project.worktree : undefined;
+    const baseUrl = config.opencode.apiUrl.endsWith("/")
+      ? config.opencode.apiUrl
+      : `${config.opencode.apiUrl}/`;
+    const headers: Record<string, string> = {};
+    if (directory) {
+      headers["x-opencode-directory"] = directory;
+    }
+    if (config.opencode.password) {
+      const credentials = `${config.opencode.username}:${config.opencode.password}`;
+      headers.Authorization = `Basic ${Buffer.from(credentials).toString("base64")}`;
+    }
+    let response = await fetch(new URL("api/agent", baseUrl), { headers });
+    if (!response.ok) {
+      logger.error("[AgentManager] Failed to fetch agents:", response.status);
       return [];
     }
-
-    if (!agents) {
-      return [];
+    let payload: unknown = await response.json();
+    let items = Array.isArray(payload) ? payload : ((payload as { data?: unknown[] } | null)?.data ?? []);
+    if (items.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      response = await fetch(new URL("api/agent", baseUrl), { headers });
+      if (!response.ok) {
+        logger.error("[AgentManager] Failed to fetch agents:", response.status);
+        return [];
+      }
+      payload = await response.json();
+      items = Array.isArray(payload) ? payload : ((payload as { data?: unknown[] } | null)?.data ?? []);
     }
-
+    // The server returns id (e.g. 'plan', the identifier OpenCode accepts)
+    // and a display name (e.g. 'Plan'). The bot stores `name` and sends it
+    // to OpenCode, so `name` must carry the id.
+    const agents: AgentInfo[] = (items as Record<string, unknown>[])
+      .filter((item) => item && typeof (item.id ?? item.name) === "string" && String(item.id ?? item.name).length > 0)
+      .map((item) => {
+        const agent: AgentInfo = {
+          name: String(item.id ?? item.name),
+          mode: (item.mode as AgentInfo["mode"]) ?? "primary",
+        };
+        if (typeof item.description === "string") {
+          agent.description = item.description;
+        }
+        if (typeof item.hidden === "boolean") {
+          agent.hidden = item.hidden;
+        }
+        if (item.model && typeof item.model === "object") {
+          const model = item.model as { modelID: unknown; providerID: unknown };
+          if (typeof model.modelID === "string" && typeof model.providerID === "string") {
+            agent.model = { modelID: model.modelID, providerID: model.providerID };
+          }
+        }
+        if (typeof item.variant === "string") {
+          agent.variant = item.variant;
+        }
+        return agent;
+      });
     // Filter out hidden agents and subagents (only show primary and all)
     const filtered = agents.filter(
       (agent) => !agent.hidden && (agent.mode === "primary" || agent.mode === "all"),
     );
-
     logger.debug(`[AgentManager] Fetched ${filtered.length} available agents`);
     return filtered;
   } catch (err) {
@@ -51,7 +100,11 @@ function pickFallbackAgent(agents: AgentInfo[]): string {
 }
 
 export async function resolveProjectAgent(preferredAgent?: string): Promise<string> {
-  const requestedAgent = preferredAgent ?? getCurrentAgent() ?? DEFAULT_AGENT;
+  const rawRequested = preferredAgent ?? getCurrentAgent() ?? DEFAULT_AGENT;
+  // Heal selections stored before the id mapping (display names 'Plan'
+  // and 'Build' instead of ids 'plan' and 'build').
+  const requestedAgent =
+    rawRequested === "Plan" ? "plan" : rawRequested === "Build" ? "build" : rawRequested;
   const project = getCurrentProject();
 
   if (!project) {
